@@ -1,7 +1,7 @@
 import request from "@/utils/request"
 import toast from 'react-hot-toast'
 import {useTaskStore} from "@/store/taskStore";
-import request from "@/utils/request"
+
 interface GenerateNotePayload {
     video_url: string
     platform: "bilibili" | "youtube"
@@ -46,9 +46,53 @@ export const generateNote = async (data: {
     }
 }
 
+// New function for file upload
+export const uploadFileAndGenerateNote = async (data: {
+    file: File;
+    link: boolean | undefined;
+    screenshot: boolean | undefined;
+    quality: string; // Quality might still be relevant for processing
+}) => {
+    const formData = new FormData();
+    formData.append('file', data.file);
+    formData.append('quality', data.quality);
+    formData.append('screenshot', String(data.screenshot || false));
+    formData.append('link', String(data.link || false)); // Link might not be applicable for local files, adjust as needed
 
+    try {
+        const response = await request.post("/upload_generate_note", formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
 
-export const delete_task = async ({video_id, platform}) => {
+        if (response.data.code != 0) {
+            if (response.data.msg) {
+                toast.error(response.data.msg);
+            } else {
+                toast.error("文件上传或笔记生成失败");
+            }
+            return null;
+        }
+
+        toast.success("文件上传成功，笔记生成任务已提交！");
+
+        const taskId = response.data.data.task_id;
+        const fileName = data.file.name; // Get filename
+
+        console.log('Upload response', response);
+        // Add pending task using the filename
+        useTaskStore.getState().addPendingTask(taskId, 'local', fileName);
+
+        return response.data;
+    } catch (e: any) {
+        console.error("❌ 文件上传请求出错", e);
+        toast.error("文件上传失败，请稍后重试");
+        throw e; // 抛出错误以便调用方处理
+    }
+};
+
+export const delete_task = async ({video_id, platform}: { video_id: string, platform: string }) => { // Add type annotation
     try {
         const data={
             video_id,platform
@@ -70,7 +114,6 @@ export const delete_task = async ({video_id, platform}) => {
         throw e
     }
 }
-
 
 export const get_task_status=async (task_id:string)=>{
     try {
