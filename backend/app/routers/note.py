@@ -4,7 +4,7 @@ import os
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile, Form
 from pydantic import BaseModel, validator
 from dataclasses import asdict
 
@@ -130,10 +130,58 @@ async def image_proxy(request: Request, url: str):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, headers=headers)
-            if resp.status_code != 200:
+            if (resp.status_code != 200):
                 raise HTTPException(status_code=resp.status_code, detail="图片获取失败")
 
             content_type = resp.headers.get("Content-Type", "image/jpeg")
             return StreamingResponse(resp.aiter_bytes(), media_type=content_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload_generate_note")
+async def upload_generate_note(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    quality: str = Form("medium"),
+    screenshot: bool = Form(False),
+    link: bool = Form(False)
+):
+    try:
+        # 1. 保存文件到本地
+        ext = os.path.splitext(file.filename)[-1].lower()
+        allowed_exts = [".mp3", ".mp4", ".txt"]
+        if ext not in allowed_exts:
+            raise HTTPException(status_code=400, detail="仅支持 txt, mp3, mp4 文件")
+
+        task_id = str(uuid.uuid4())
+        upload_dir = "uploaded_files"
+        os.makedirs(upload_dir, exist_ok=True)
+        save_path = os.path.join(upload_dir, f"{task_id}{ext}")
+
+        with open(save_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # 2. 异步处理任务
+        background_tasks.add_task(run_upload_note_task, task_id, save_path, file.filename, quality, screenshot, link, ext)
+
+        return R.success({"task_id": task_id})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def run_upload_note_task(task_id, file_path, orig_filename, quality, screenshot, link, ext):
+    try:
+        note = NoteGenerator().generate_from_file(
+            file_path=file_path,
+            orig_filename=orig_filename,
+            quality=quality,
+            screenshot=screenshot,
+            link=link,
+            task_id=task_id,
+            ext=ext
+        )
+        save_note_to_file(task_id, note)
+    except Exception as e:
+        save_note_to_file(task_id, {"error": str(e)})

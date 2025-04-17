@@ -16,7 +16,7 @@ from app.models.gpt_model import GPTSource
 from app.models.notes_model import NoteResult
 from app.models.notes_model import AudioDownloadResult
 from app.enmus.note_enums import DownloadQuality
-from app.models.transcriber_model import TranscriptResult
+from app.models.transcriber_model import TranscriptResult, TranscriptSegment
 from app.transcriber.base import Transcriber
 from app.transcriber.transcriber_provider import get_transcriber
 from app.transcriber.whisper import WhisperTranscriber
@@ -198,5 +198,84 @@ class NoteGenerator:
             transcript=transcript,
             audio_meta=audio
         )
+
+    def generate_from_file(
+        self,
+        file_path: str,
+        orig_filename: str,
+        quality: str = "medium",
+        screenshot: bool = False,
+        link: bool = False,
+        task_id: str = None,
+        ext: str = None
+    ) -> NoteResult:
+        logger.info(f"开始处理上传文件: {file_path}")
+        gpt = self.get_gpt()
+        # 1. 判断文件类型
+        if ext == ".txt":
+            # 读取文本内容，直接走 GPT
+            with open(file_path, "r", encoding="utf-8") as f:
+                text = f.read()
+            # 构造 TranscriptResult
+            transcript = TranscriptResult(
+                language="zh",
+                full_text=text,
+                segments=[TranscriptSegment(start=0, end=0, text=text)],
+                raw=None
+            )
+            # 构造 GPTSource
+            from app.models.gpt_model import GPTSource
+            source = GPTSource(
+                title=orig_filename,
+                segment=transcript.segments,
+                tags=None,
+                screenshot=screenshot,
+                link=link
+            )
+            markdown: str = gpt.summarize(source)
+            markdown = replace_content_markers(markdown=markdown, video_id=task_id, platform="local")
+            # 不需要截图
+            audio_meta = {
+                "title": orig_filename,
+                "duration": 0,
+                "cover_url": "",
+                "file_path": file_path,
+                "platform": "local",
+                "raw_info": {},
+                "video_id": task_id
+            }
+            return NoteResult(
+                markdown=markdown,
+                transcript=transcript,
+                audio_meta=audio_meta
+            )
+        else:
+            # mp3/mp4 走音频识别
+            transcript: TranscriptResult = self.transcriber.transcript(file_path=file_path)
+            from app.models.gpt_model import GPTSource
+            source = GPTSource(
+                title=orig_filename,
+                segment=transcript.segments,
+                tags=None,
+                screenshot=screenshot,
+                link=link
+            )
+            markdown: str = gpt.summarize(source)
+            markdown = replace_content_markers(markdown=markdown, video_id=task_id, platform="local")
+            # 不需要截图
+            audio_meta = {
+                "title": orig_filename,
+                "duration": 0,
+                "cover_url": "",
+                "file_path": file_path,
+                "platform": "local",
+                "raw_info": {},
+                "video_id": task_id
+            }
+            return NoteResult(
+                markdown=markdown,
+                transcript=transcript,
+                audio_meta=audio_meta
+            )
 
 

@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Info, Clock, Upload, X, File as FileIcon } from "lucide-react"
+import { Info, Clock, Upload, X, File as FileIcon, Files } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip.tsx";
 import { generateNote, uploadFileAndGenerateNote } from "@/services/note.ts";
 import { useTaskStore } from "@/store/taskStore";
@@ -42,13 +42,12 @@ type NoteFormValues = z.infer<typeof formSchema>
 
 const NoteForm = () => {
     const [selectedTaskId] = useState<string | null>(null)
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const tasks = useTaskStore((state) => state.tasks)
     const setCurrentTask = useTaskStore((state) => state.setCurrentTask)
     const currentTaskId = useTaskStore(state => state.currentTaskId)
-    tasks.find((t) => t.id === selectedTaskId);
     const form = useForm<NoteFormValues>({
         resolver: zodResolver(formSchema),
         defaultValues: {
@@ -61,26 +60,42 @@ const NoteForm = () => {
     })
 
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
+        const files = event.target.files;
+        if (files && files.length > 0) {
             const allowedTypes = ['text/plain', 'audio/mpeg', 'video/mp4'];
-            if (!allowedTypes.includes(file.type)) {
-                toast.error("不支持的文件类型。请上传 txt, mp3 或 mp4 文件。");
-                if (fileInputRef.current) {
-                    fileInputRef.current.value = "";
-                }
-                return;
+            const validFiles = Array.from(files).filter(file => {
+                 if (!allowedTypes.includes(file.type)) {
+                    toast.error(`不支持的文件类型: ${file.name}. 只允许 txt, mp3, mp4.`);
+                    return false;
+                 }
+                 return true;
+            });
+
+            if (validFiles.length > 0) {
+                setSelectedFiles(prevFiles => [...prevFiles, ...validFiles]);
+                form.setValue("video_url", "");
+                form.setValue("platform", "local");
+                form.clearErrors("video_url");
             }
 
-            setSelectedFile(file);
-            form.setValue("video_url", "");
-            form.setValue("platform", "local");
-            form.clearErrors("video_url");
+             if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+             }
         }
     };
 
-    const clearFile = () => {
-        setSelectedFile(null);
+    const removeFile = (indexToRemove: number) => {
+        setSelectedFiles(prevFiles => {
+            const newFiles = prevFiles.filter((_, index) => index !== indexToRemove);
+            if (newFiles.length === 0) {
+                 form.setValue("platform", "bilibili");
+            }
+            return newFiles;
+        });
+    };
+
+    const clearAllFiles = () => {
+        setSelectedFiles([]);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
         }
@@ -95,30 +110,52 @@ const NoteForm = () => {
 
     const onSubmit = async (data: NoteFormValues) => {
         console.log("🎯 提交内容：", data)
+        form.clearErrors();
 
-        if (selectedFile) {
-            await uploadFileAndGenerateNote({
-                file: selectedFile,
-                quality: data.quality,
-                screenshot: data.screenshot,
-                link: data.link,
-            });
+        if (selectedFiles.length > 0) {
+            let allSucceeded = true;
+            const uploadPromises = selectedFiles.map(file =>
+                uploadFileAndGenerateNote({
+                    file: file,
+                    quality: data.quality,
+                    screenshot: data.screenshot,
+                    link: data.link,
+                }).catch(e => {
+                    allSucceeded = false;
+                    console.error(`上传文件 ${file.name} 失败:`, e);
+                    return null;
+                })
+            );
+
+            await Promise.allSettled(uploadPromises);
+
+            if (allSucceeded) {
+                 toast.success(`已提交 ${selectedFiles.length} 个文件的笔记生成任务。`);
+                 clearAllFiles();
+            } else {
+                 toast.error("部分文件上传或处理失败，请检查历史记录。");
+            }
+
         } else if (data.video_url) {
-            if (data.platform === 'local') {
+             if (data.platform === 'local') {
                 toast.error("请选择哔哩哔哩或 Youtube 平台以使用视频链接。");
                 form.setError("platform", { message: "请选择正确的平台" });
                 return;
             }
-            await generateNote({
-                video_url: data.video_url,
-                platform: data.platform,
-                quality: data.quality,
-                screenshot: data.screenshot,
-                link: data.link
-            });
+            try {
+                await generateNote({
+                    video_url: data.video_url,
+                    platform: data.platform,
+                    quality: data.quality,
+                    screenshot: data.screenshot,
+                    link: data.link
+                });
+                form.reset();
+            } catch (e) {
+            }
         } else {
-            form.setError("video_url", { message: "请输入视频链接或选择一个文件" });
-            toast.error("请输入视频链接或选择一个文件");
+            form.setError("video_url", { message: "请输入视频链接或选择至少一个文件" });
+            toast.error("请输入视频链接或选择至少一个文件");
         }
     }
 
@@ -135,13 +172,13 @@ const NoteForm = () => {
                                         <Info className="h-4 w-4 text-neutral-400 hover:text-primary cursor-pointer" />
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                        <p className="text-xs ">输入视频链接，或上传本地 txt/mp3/mp4 文件</p>
+                                        <p className="text-xs ">输入视频链接，或上传本地 txt/mp3/mp4 文件 (可多选)</p>
                                     </TooltipContent>
                                 </Tooltip>
                             </TooltipProvider>
                         </div>
 
-                        {!selectedFile ? (
+                        {selectedFiles.length === 0 ? (
                             <div className="flex gap-2">
                                 <FormField
                                     control={form.control}
@@ -156,7 +193,7 @@ const NoteForm = () => {
                                                     }
                                                 }}
                                                 value={field.value}
-                                                disabled={!!selectedFile}
+                                                disabled={selectedFiles.length > 0}
                                             >
                                                 <FormControl>
                                                     <SelectTrigger className="w-32">
@@ -182,7 +219,7 @@ const NoteForm = () => {
                                                 <Input
                                                     placeholder="粘贴视频链接 (B站/Youtube)"
                                                     {...field}
-                                                    disabled={!!selectedFile}
+                                                    disabled={selectedFiles.length > 0}
                                                 />
                                             </FormControl>
                                             <FormMessage />
@@ -191,16 +228,27 @@ const NoteForm = () => {
                                 />
                             </div>
                         ) : (
-                            <div className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
-                                <div className="flex items-center gap-2 truncate">
-                                    <FileIcon className="h-5 w-5 text-primary flex-shrink-0" />
-                                    <span className="text-sm text-neutral-700 truncate" title={selectedFile.name}>
-                                        {selectedFile.name}
-                                    </span>
+                            <div className="space-y-2 border rounded-md p-2 max-h-32 overflow-y-auto">
+                                <div className="flex justify-between items-center mb-1">
+                                     <span className="text-sm font-medium text-neutral-600 flex items-center gap-1">
+                                         <Files className="h-4 w-4"/>
+                                         已选择 {selectedFiles.length} 个文件
+                                     </span>
+                                     <Button variant="ghost" size="sm" onClick={clearAllFiles} className="text-xs h-auto px-2 py-1">
+                                         全部清除
+                                     </Button>
                                 </div>
-                                <Button variant="ghost" size="icon" onClick={clearFile} className="h-6 w-6">
-                                    <X className="h-4 w-4" />
-                                </Button>
+                                {selectedFiles.map((file, index) => (
+                                    <div key={index} className="flex items-center justify-between p-1 bg-muted/30 rounded text-xs">
+                                        <div className="flex items-center gap-1 truncate">
+                                            <FileIcon className="h-3 w-3 text-primary flex-shrink-0" />
+                                            <span className="truncate" title={file.name}>{file.name}</span>
+                                        </div>
+                                        <Button variant="ghost" size="icon" onClick={() => removeFile(index)} className="h-5 w-5 flex-shrink-0">
+                                            <X className="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                ))}
                             </div>
                         )}
 
@@ -210,18 +258,21 @@ const NoteForm = () => {
                             onChange={handleFileChange}
                             className="hidden"
                             accept=".txt,.mp3,.mp4,text/plain,audio/mpeg,video/mp4"
+                            multiple
                         />
 
-                        {!selectedFile && (
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={triggerFileInput}
-                                className="w-full flex items-center gap-2"
-                            >
-                                <Upload className="h-4 w-4" />
-                                上传本地文件 (txt/mp3/mp4)
-                            </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={triggerFileInput}
+                            className="w-full flex items-center gap-2"
+                            disabled={!!form.getValues("video_url")}
+                        >
+                            <Upload className="h-4 w-4" />
+                            {selectedFiles.length > 0 ? "添加更多文件" : "上传本地文件 (txt/mp3/mp4)"}
+                        </Button>
+                        {form.formState.errors.video_url && !selectedFiles.length && (
+                             <p className="text-sm text-destructive">{form.formState.errors.video_url.message}</p>
                         )}
 
                         <FormField
@@ -273,12 +324,12 @@ const NoteForm = () => {
                                         checked={field.value}
                                         onCheckedChange={field.onChange}
                                         id="link"
-                                        disabled={!!selectedFile}
+                                        disabled={selectedFiles.length > 0}
                                     />
                                 </FormControl>
                                 <FormLabel
                                     htmlFor="link"
-                                    className={`text-sm font-medium leading-none ${selectedFile ? 'text-neutral-400 cursor-not-allowed' : ''}`}
+                                    className={`text-sm font-medium leading-none ${selectedFiles.length > 0 ? 'text-neutral-400 cursor-not-allowed' : ''}`}
                                 >
                                     是否插入内容跳转链接 (仅支持在线视频)
                                 </FormLabel>
@@ -288,36 +339,44 @@ const NoteForm = () => {
                     <FormField
                         control={form.control}
                         name="screenshot"
-                        render={({ field }) => (
-                            <FormItem className="flex items-center space-x-2">
-                                <FormControl>
-                                    <Checkbox
-                                        checked={field.value}
-                                        onCheckedChange={field.onChange}
-                                        id="screenshot"
-                                        disabled={selectedFile?.type === 'text/plain' || selectedFile?.type === 'audio/mpeg'}
-                                    />
-                                </FormControl>
-                                <FormLabel
-                                    htmlFor="screenshot"
-                                    className={`text-sm font-medium leading-none ${selectedFile?.type === 'text/plain' || selectedFile?.type === 'audio/mpeg' ? 'text-neutral-400 cursor-not-allowed' : ''}`}
-                                >
-                                    是否插入视频截图 (仅支持视频文件/链接)
-                                </FormLabel>
-                            </FormItem>
-                        )}
+                        render={({ field }) => {
+                            const hasTextOrAudio = selectedFiles.some(file =>
+                                file.type === 'text/plain' || file.type === 'audio/mpeg'
+                            );
+                            const isDisabled = hasTextOrAudio;
+
+                            return (
+                                <FormItem className="flex items-center space-x-2">
+                                    <FormControl>
+                                        <Checkbox
+                                            checked={field.value}
+                                            onCheckedChange={field.onChange}
+                                            id="screenshot"
+                                            disabled={isDisabled}
+                                        />
+                                    </FormControl>
+                                    <FormLabel
+                                        htmlFor="screenshot"
+                                        className={`text-sm font-medium leading-none ${isDisabled ? 'text-neutral-400 cursor-not-allowed' : ''}`}
+                                    >
+                                        是否插入视频截图 (仅支持视频文件/链接)
+                                    </FormLabel>
+                                </FormItem>
+                            );
+                        }}
                     />
 
                     <Button
                         type="submit"
                         className="w-full bg-primary cursor-pointer"
-                        disabled={isGenerating}
+                        disabled={isGenerating || (selectedFiles.length === 0 && !form.getValues("video_url"))}
                     >
                         {isGenerating ? "正在处理…" : "生成笔记"}
                     </Button>
                 </form>
             </Form>
 
+            {/* 修复：将 Clock 和 h2 放入同一个 div */}
             <div className="flex items-center gap-2 my-4">
                 <Clock className="h-4 w-4 text-neutral-500" />
                 <h2 className="text-base font-medium text-neutral-900">生成历史</h2>
@@ -335,7 +394,7 @@ const NoteForm = () => {
                     </li>
                     <li className="flex items-start gap-2">
                         <span className="text-primary font-bold">•</span>
-                        <span>支持 B站/YouTube 链接或本地 txt/mp3/mp4 文件</span>
+                        <span>支持 B站/YouTube 链接或本地 txt/mp3/mp4 文件 (可批量上传)</span>
                     </li>
                     <li className="flex items-start gap-2">
                         <span className="text-primary font-bold">•</span>

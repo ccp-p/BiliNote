@@ -80,7 +80,6 @@ export const useTaskStore = create<TaskStore>()(
                         },
                         ...state.tasks,
                     ],
-                    currentTaskId: taskId, // 默认设置为当前任务
                 })),
 
             updateTaskContent: (id, data) =>
