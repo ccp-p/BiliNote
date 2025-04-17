@@ -43,7 +43,7 @@ class NoteGenerator:
     def __init__(self):
         self.model_size: str = 'base'
         self.device: Union[str, None] = None
-        self.transcriber_type = 'fast-whisper'
+        self.transcriber_type = 'bcut'
         self.transcriber = self.get_transcriber()
         # TODO 需要更换为可调节
 
@@ -86,12 +86,8 @@ class NoteGenerator:
         :param transcriber: 选择的转义器
         :return:
         '''
-        if self.transcriber_type == 'fast-whisper':
-            logger.info("使用Whisper")
-            return get_transcriber()
-        else:
-            logger.warning("不支持的转义器")
-            raise ValueError(f"不支持的转义器：{self.transcriber}")
+        return get_transcriber(self.transcriber_type)
+ 
 
     def save_meta(self, video_id, platform, task_id):
         logger.info(f"记录已经生成的数据信息")
