@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Union
 
@@ -29,6 +30,7 @@ from app.utils.video_helper import generate_screenshot
 # from app.services.gpt import summarize_text
 from dotenv import load_dotenv
 from app.utils.logger import get_logger
+from app.gpt.custom_gpt import CustomGPT
 logger = get_logger(__name__)
 load_dotenv()
 BACKEND_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
@@ -62,6 +64,8 @@ class NoteGenerator:
         elif self.provider == 'qwen':
             logger.info("使用Qwen")
             return QwenGPT()
+        elif self.provider == 'custom':
+            return CustomGPT()
         else:
             logger.warning("不支持的AI提供商")
             raise ValueError(f"不支持的AI提供商：{self.provider}")
@@ -216,13 +220,29 @@ class NoteGenerator:
             # 读取文本内容，直接走 GPT
             with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
-            # 构造 TranscriptResult
-            transcript = TranscriptResult(
-                language="zh",
-                full_text=text,
-                segments=[TranscriptSegment(start=0, end=0, text=text)],
-                raw=None
-            )
+            try:
+                data = json.loads(text)
+                # 构造 TranscriptResult
+                transcript = TranscriptResult(
+                    language=data.get("language", "zh"),
+                    full_text=data.get("full_text", ""),
+                    segments=[
+                        TranscriptSegment(
+                            start=seg.get("start", 0),
+                            end=seg.get("end", 0),
+                            text=seg.get("text", "")
+                        ) for seg in data.get("segments", [])
+                    ],
+                    raw=None
+                )
+            except Exception as e:
+                logger.error(f"解析txt为JSON失败，按纯文本处理: {e}")
+                transcript = TranscriptResult(
+                    language="zh",
+                    full_text=text,
+                    segments=[TranscriptSegment(start=0, end=0, text=text)],
+                    raw=None
+                )
             # 构造 GPTSource
             from app.models.gpt_model import GPTSource
             source = GPTSource(
