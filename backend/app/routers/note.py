@@ -50,9 +50,20 @@ NOTE_OUTPUT_DIR = "note_results"
 
 def save_note_to_file(task_id: str, note):
     os.makedirs(NOTE_OUTPUT_DIR, exist_ok=True)
-    with open(os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.json"), "w", encoding="utf-8") as f:
-        json.dump(asdict(note), f, ensure_ascii=False, indent=2)
-
+    path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.json")
+    # 判断是否为 dataclass 实例
+    try:
+        from dataclasses import is_dataclass
+        if is_dataclass(note):
+            data = asdict(note)
+        else:
+            data = note
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        # 兜底写入错误信息
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"error": str(e)}, f, ensure_ascii=False, indent=2)
 
 def run_note_task(task_id: str, video_url: str, platform: str, quality: DownloadQuality, link: bool = False,screenshot: bool = False):
     try:
@@ -163,6 +174,7 @@ async def upload_generate_note(
             content = await file.read()
             f.write(content)
 
+        # run_upload_note_task( task_id, save_path, file.filename, quality, screenshot, link, ext)
         # 2. 异步处理任务
         background_tasks.add_task(run_upload_note_task, task_id, save_path, file.filename, quality, screenshot, link, ext)
 

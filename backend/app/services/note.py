@@ -252,8 +252,9 @@ class NoteGenerator:
                 screenshot=screenshot,
                 link=link
             )
+                # 直接走 GPT
             markdown: str = gpt.summarize(source)
-            markdown = replace_content_markers(markdown=markdown, video_id=task_id, platform="local")
+            # markdown = replace_content_markers(markdown=markdown, video_id=task_id, platform="local")
             # 不需要截图
             audio_meta = {
                 "title": orig_filename,
