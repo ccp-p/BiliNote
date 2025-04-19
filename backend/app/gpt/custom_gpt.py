@@ -14,9 +14,9 @@ logger = get_logger(__name__)
 
 class CustomGPT(GPT):
     def __init__(self):
-        self.api_base_url = os.getenv("CUSTOM_API_BASE_URL", "http://localhost:8000")
+        self.api_base_url = os.getenv("CUSTOM_API_BASE_URL", "http://localhost:3000")
         self.api_endpoint = "/api/chat/completions"
-        self.model = os.getenv("CUSTOM_MODEL", "your-model")
+        self.model = os.getenv("CUSTOM_MODEL", "gpt4.1")
         self.temperature = 0.7
         self.top_p = 1.0
         self.max_tokens = 2048
