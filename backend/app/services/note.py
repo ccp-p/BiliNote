@@ -265,6 +265,9 @@ class NoteGenerator:
                 "raw_info": {},
                 "video_id": task_id
             }
+            # orig_filename
+            os.remove(orig_filename)
+            logger.info(f"删除临时文件: {orig_filename}")
             return NoteResult(
                 markdown=markdown,
                 transcript=transcript,
